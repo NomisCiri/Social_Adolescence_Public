@@ -1,0 +1,566 @@
+---
+title: "Inspection of Simulations"
+author: "Simon"
+date: "9/12/2018"
+output:
+  md_document:
+    variant: markdown_github
+    toc: yes
+---
+
+```{r setup}
+library(tidyverse)
+library(here)
+knitr::opts_chunk$set(echo = TRUE)
+
+
+my_theme <- theme_bw( )+theme(axis.text = element_text(size = 15),
+                              axis.title = element_text(size = 15), 
+                              plot.title = element_text(size = 18, vjust = 1.5,hjust=0.5), 
+                              panel.grid = element_blank(),
+                              axis.title.y = element_text(vjust = 1.5),
+                              panel.border=element_rect(size = 1, colour = "black"), 
+                              text = element_text(size=15)
+) 
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+```
+# Whats New Now?
+I changed the Simulations so that there can not be a negative OCU Value. But the Density in plausible ranges is higher now. The plots look better interpretable now.
+Now I simulate Data under 3 different Groups that i will then use to explore the Boudnary Conditions of my modelfitting procedure. The first Group is a very risk averse group, the second is a medium risk averse and the third is a risk seeking
+
+# Inspection of the Raw data and Simulations.
+Here we look at the agents who make choices under different models. I Simulate data with a Safe and a Risky Advisor. To get risky and Safe advisors, i export one subject of the Pilot which has been collected in the laboratory
+and duplicate teh Dataset. I then invert the sign of the Advice. After our last mails, I just duplicate this whole dataset again so i get a total of 436 Trails which I use to Simulate Data under different models.
+
+# Social Information Model
+The social Information Model assumes that an advised Option contributes to the Utility of this Option in a linear Fashion. This happens irrespective of whether the advice is "safe" or "risky". Depending on the value for $\psi$ this leads to more Risk Seeking or more Risk averse Policies in the Social Than in the Solo Condition.
+
+$$EU_{SOLO_{safe}}=5$$
+$$EU_{SOLO_{risk}}=p*V^\rho$$
+
+$$EU_{social_{risk}}=EU_{SOLO_{risk}}+\psi \qquad \forall Advice = Risky$$
+
+$$EU_{social_{safe}}=EU_{SOLO_{safe}}+\psi \qquad \forall Advice = Safe$$
+
+## Risk Averse OCU Agent Simulation
+```{r , fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+##########
+
+setwd(paste0(here(),"/ModelInfo"))
+load(paste0("1InfoSocial01.RData"));
+#here i load all my simulations and concatanete them all in the same array.
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("1InfoSocial",j,"1.RData"))#experimentloop
+}
+
+
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv),fill=as.factor(RiskSafeAdv)))+
+  geom_point(aes(x=ocu,y=mean))+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  scale_x_continuous(name=expression(Psi))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Social Info Risk Averse")+my_theme
+
+##########
+```
+
+## Risk "Neutral" (rho=1) OCU Agent Simulation
+```{r , fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+setwd(paste0(here(),"/ModelInfo"))
+load(paste0("2InfoSocial01.RData"));
+#here i load all my simulations and concatanete them all in the same array.
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("2InfoSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv),fill=as.factor(RiskSafeAdv)))+
+  geom_point(aes(x=ocu,y=mean))+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  scale_x_continuous(name=expression(Psi))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Social Info Agent Simulation Risk Neutral")+my_theme
+
+
+##########
+```
+
+## Risk Seeking OCU Agent Simulation
+```{r , fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+setwd(paste0(here(),"/ModelInfo"))
+load(paste0("3InfoSocial01.RData"));
+#here i load all my simulations and concatanete them all in the same array.
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("3InfoSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv),fill=as.factor(RiskSafeAdv)))+
+  geom_point(aes(x=ocu,y=mean))+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  scale_x_continuous(name=expression(Psi))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Social Info Agent Simulation Risk Seeking")+my_theme
+
+```
+Here we can see that in the solo condition, our *risk averse agents* chose the Risky option in about *20 to 40%* of the cases. A *risk neutral* agent chooses the Risky Option in *40-60 %* and the *risk seeking* agent chooses the risky Option in more than *60 to 70* percent of the cases. For all condition, the social information conditioncontributes to the behavior in the following way: If the agent has a negative $\psi$, this indicates non conformity. A negative value here means on the behavioral level that the Agent does exactly the opposite of what it is advised to. This can be seen in the interaction on the left hand. High $\psi$ values lead to a risk seeking policy if there is a risk seeking advisor. Negative values of $\psi$ lead to a risk seeking policy if there is a risk averse or "safe" advisor. Values around 0 are similar to the solo condition.
+
+# Social RISK Model
+The social Risk Model assumes that in the social condition of the experiment become more risk seeking, irrespective of the advice. The value for $\psi$ is now an direct indicator of the increase in general Risk taking of our agent in the social part of the simulated Experiment. In our newest simulations, we do not allow this value to become negative anymore, because this would 
+
+$$EU_{SOLO_{safe}}=5$$
+
+$$EU_{SOLO_{risk}}=p*V^\rho$$
+
+$$EU_{social_{risk}}=EU_{SOLO_{risk}}+\psi \qquad \forall Advices$$
+
+## Risk Averse Reward Sensitivity Agent Simulation
+```{r , fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+##########
+
+
+setwd(paste0(here(),"/ModelRisk"))
+load(paste0("1RiskSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("1RiskSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv),fill=as.factor(RiskSafeAdv)))+
+  geom_point(aes(x=ocu,y=mean))+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  scale_x_continuous(name=expression(Psi))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Social Risk Agent Simulation Risk Averse")+my_theme
+
+```
+
+## Risk Neutral Reward Sensitivity Agent Simulation
+
+```{r , fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+setwd(paste0(here(),"/ModelRisk"))
+load(paste0("2RiskSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("2RiskSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv),fill=as.factor(RiskSafeAdv)))+
+  geom_point(aes(x=ocu,y=mean))+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  scale_x_continuous(name=expression(Psi))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Social Risk Agent Simulation Risk Neutral")+my_theme
+
+```
+
+## Risk Seeking Reward Sensitivity Agent Simulation
+
+```{r , fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+
+setwd(paste0(here(),"/ModelRisk"))
+load(paste0("3RiskSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("3RiskSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv),fill=as.factor(RiskSafeAdv)))+
+  geom_point(aes(x=ocu,y=mean))+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  scale_x_continuous(name=expression(Psi))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Social Risk Agent Simulation Risk Seeking")+my_theme
+
+
+```
+We can see that irrespective of the Advisors Policy, Our agents become more risk seeking in the Social part of the Simulated experiment, the more $\psi$ diverges positively from 0. They get less risk seeking, the more $\psi$ diverges into the negative domain.
+
+#Social Noise model.
+In this model we assume that the Agents choices become more stocastic or "noisy" when decisions are made in the social part of the experiemt. This was first caputred by a parameter that was added to the Temperature Paramter $\tau$ in the Choice model. The problem with this was, that value information and the effect of "noise" are correlated. You can see [in these animations]() how a higher temperature paramter is not independent of the difference in expected utilities. To make this independent, i changed to social model to a "trembling hand choice model", where $\psi$ now relates to the degree of "Guessing".
+
+$$p_{SOLO_{ChooseRisk}}=1/{1^{e^-({U_{Risk}-U_{safe}*\tau^{-1}})}}$$
+
+$$p_{SOCIAl_{ChooseRisk}}=(1-\psi)*1/{1^{e^-({U_{Risk}-U_{safe}*(\tau)^{-1}})}}+(\psi/2)$$
+
+## Risk Averse Trembling Hand Agent Simulation
+
+```{r Noise, fig.show='hold',fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+##########
+
+
+setwd(paste0(here(),"/ModelTemperature"))
+load(paste0("1TemperatureSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("1TemperatureSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+# this works for the temperature models.
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocu,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value",limits = c(0,1))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Trembling Hand")+my_theme
+
+```
+## Risk Neutral Trembling Hand Agent Simulation
+
+```{r, fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+setwd(paste0(here(),"/ModelTemperature"))
+load(paste0("2TemperatureSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("2TemperatureSocial",j,"1.RData"))#experimentloop
+}
+
+# this works for the temperature models.
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocu,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value",limits = c(0,1))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Trembling Hand")+my_theme
+```
+## Risk Seeking Trembling Hand Agent Simulation
+
+```{r, fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+
+setwd(paste0(here(),"/ModelTemperature"))
+load(paste0("3TemperatureSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("3TemperatureSocial",j,"1.RData"))#experimentloop
+}
+
+
+# this works for the temperature models.
+df %>% group_by(test_part,ocu,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocu),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocu,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value",limits = c(0,1))+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("Trembling Hand")+my_theme
+```
+Indeed In the social Condition, choices become more "random". It does not matter if there is a Risky or a Safe Advisor.
+Note that negative values do not make sense on the temperature parameter or at least its hard to interpret; because there is nothing like less than no noise. So to keep the number of Artificial Experiments constant,
+I am using values from 1 through 10 for my OCU simulations. 
+
+We can see that in the solo condition, there is a distribution around the percentage of risky choice that results from differences in the value for $\rho$ which i drew from a distribution around .3 before. So, of course $\rho$ can capture differences in the percentage of risky choice. To some extend we therefore have a [sloppy model](https://www.ncbi.nlm.nih.gov/pubmed/20556289): the Social model just finds a higher value with higher uncertainty for $\rho$. A higher value for rho pushes the % of risky choices up, just like a higher temperature Parameter does.
+
+# Seperate Advice
+To allow pieces of advice to have different weights, depending on whether its a safe or a risky advice, thus reflecting known constructs such as loss or risk aversion, i also simulated data under the following model:
+
+$$EU_{social_{safe}}=EU_{SOLO_{safe}}+\psi_{safe} \qquad \forall Safe Pieces Of Advice$$
+
+$$EU_{social_{risk}}=EU_{SOLO_{risk}}+\psi_{risk} \qquad \forall Risky Pieces Of Advice$$
+
+
+
+## Risk Averse Assymetric OCU Simulation
+
+```{r, fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+##########
+
+
+setwd(paste0(here(),"/ModelSep"))
+load(paste0("1SepSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("1SepSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+# this works for the temperature models.
+df %>% group_by(test_part,ocuSafe,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocuSafe),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocuSafe,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value")+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("OCUSafe Parameter")+my_theme
+
+
+df %>% group_by(test_part,ocuRisk,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocuRisk),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocuRisk,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value")+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("OCURisk Parameter")+my_theme
+
+```
+
+
+
+## Risk Neutral Assymetric OCU Simulation
+
+```{r, fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+##########
+
+
+setwd(paste0(here(),"/ModelSep"))
+load(paste0("2SepSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("2SepSocial",j,"1.RData"))#experimentloop
+}
+
+labels<-c("RiskyAdvisor","SafeAdvisor")
+labels<-c('8'="social",'10'="solo")
+
+# this works for the temperature models.
+df %>% group_by(test_part,ocuSafe,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocuSafe),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocuSafe,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value")+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("OCUSafe Parameter")+my_theme
+
+
+df %>% group_by(test_part,ocuRisk,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocuRisk),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocuRisk,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value")+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("OCURisk Parameter")+my_theme
+
+```
+
+
+## Risk Seeking Assymetric OCU Simulation
+
+```{r, fig.align='center',fig.keep='all',out.width = '350%',echo=FALSE,results='hide', warning=FALSE}
+##########
+
+
+setwd(paste0(here(),"/ModelSep"))
+load(paste0("3SepSocial01.RData"));
+df<-as.data.frame(do.call(cbind,Simulations[[1]]))
+#df$mean<-mean(df$ChooseRisk)
+for (j in 1:5){
+  for(i in 2:length(Simulations)){#subjectloop
+    dfH<-as.data.frame(do.call(cbind,Simulations[[i]]))
+    df<-rbind(df,dfH)
+  }
+  load(paste0("3SepSocial",j,"1.RData"))#experimentloop
+}
+
+# this works for the temperature models.
+df %>% group_by(test_part,ocuSafe,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocuSafe),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocuSafe,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value")+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("OCUSafe Parameter")+my_theme
+
+
+df %>% group_by(test_part,ocuRisk,RiskSafeAdv)%>% # ok krass
+  summarise( mean = mean(ChooseRisk) ) %>%
+  ggplot(aes(x=as.numeric(ocuRisk),y=mean,color=as.factor(RiskSafeAdv)))+
+  geom_jitter(aes(x=ocuRisk,y=mean),width =1)+
+  #geom_line()+
+  geom_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = TRUE) +
+  #geom_point(aes(x=ocu,y=as.numeric(mean(ChooseRisk))))+
+  scale_x_continuous(name="OCU_Value")+
+  scale_y_continuous(name="Percent Risky Choice")+
+  scale_color_discrete(name="Safe Or Risky Other",breaks=c(1,2),labels=c("RiskyAdvisor","SafeAdvisor"))+
+  scale_linetype_discrete(name="Generative Distribution", breaks=c(1,2),labels=c("Low OCU", "High OCU"))+
+  guides(fill=F)+facet_grid(cols = vars(test_part),labeller = labeller(test_part = labels) )+
+  ggtitle("OCURisk Parameter")+my_theme
+
+```
+

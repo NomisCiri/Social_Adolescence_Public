@@ -1,0 +1,628 @@
+---
+title: "Model Comparison and Parameter Correlations"
+author: "Simon"
+date: "8/27/2018"
+output:
+  md_document:
+    variant: markdown_github
+    toc: yes
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(loo)
+#library(shinystan)
+library(rstan)
+library(tidyverse)
+library(PerformanceAnalytics)
+#library(corrr)
+library(here)
+library(knitr)
+library(stringr)
+library(sigmoid)
+library(reshape2)
+
+
+source("../C_Fit_BraamsData/Helpers/Start_Workflow.R")# in here there is the DIC script defined.
+source("../C_Fit_BraamsData/Helpers/R_rainclouds.R")
+source("../C_Fit_BraamsData/Helpers/summarySE.R")
+
+###### these tow functions where once used to make half correlation Matrixes.
+#But now not anymore.
+get_lower_tri<-function(cormat){
+  cormat[upper.tri(cormat)] <- NA
+  return(cormat)
+}
+
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+
+# Loads the results of my stan 
+
+```
+
+# Crossvalidation Code and Procedure -> Major Changes:
+The i used different values for Simulating the Agents now. Namely i checked the parameter Estimates of the Blankenstein et al model
+This is the paremter recovery and crossvalidation of the social influence models. 
+I simulated data under different Models.
+
+1. [The Chung Model](Model_Code/ocu_hier.stan)
+2. [The Risky Utility Model](Model_Code/ocu_hier_Risk.stan)
+3. [The Noise Model](Model_Code/ocu_hier_Noise.stan)
+4. [The Null Model](Model_Code/expUtil_hier.stan)
+4. [A Model that Assumes Assymetric Influence](Model_Code/ocu_hier_Sep.stan)
+
+For each generative model there are 6 "raw data" files. Each of these files contains Simulated responses of two 100 agents, devided into two groups. Both groups only differ in the mu of the $\psi$ value that has been used to generate the data. One group draws OCU values froma normal distribution with a negative and the other with a positive deviation from 0 with equal variance. Each file contains simulated data of two groups that have varying OCU values that symmetricaly differ from 0. The file with the 0 flag contains responses of a null model where the other conferred utility parameter is 0. Followingly there are 11 groups of ocu values that are then used to fit the hierarchical bayesian version of the OCU model. If you want to inspect the Simulations [click here](../A_Simulations/). 
+
+On each of these files; 5 models are fitted with [this script](ModelFitting/FitOCUModels.R) sent to the tardis cluster of the mpi [with this script](ModelFitting/FitOCUModelsOnCluster.sh).
+The rationale behind this is to be able to identify if the genreative models turn out to be the most likely model under the data after the fitting procedure. Only then we can be sure that these models represent falsifiable hypothesis.
+
+```{r Risk Averse Crossvalidation}
+# this does the Model Comparison
+#library("here")
+setwd(here())# Should have Happened Before but anyway.
+
+#We First PReallocate Everything that we might need, so nothing gets Confused Later.
+rhoSim<-(cbind(1:50,1:50))
+rhoFit<-(cbind(1:50,1:50))
+tauSim<-(cbind(1:50,1:50))
+tauFit<-(cbind(1:50,1:50))
+ocuSim<-(cbind(1:50,1:50))
+ocuFit<-(cbind(1:50,1:50))
+#For the Sep Model
+ocuSafeSim<-(cbind(1:50,1:50))
+ocuSafeFit<-(cbind(1:50,1:50))
+ocuRiskSim<-(cbind(1:50,1:50))
+ocuRiskFit<-(cbind(1:50,1:50))
+
+names<-c("rhoSim","rhoFit","tauSim","tauFit","ocuSim","ocuFit")
+namesSep<-c("rhoSim","rhoFit","tauSim","tauFit","ocuSafeSim","ocuSafeFit","ocuRiskSim","ocuRiskFit")
+
+
+#Beginning of the Filenames which indicates the Model that i used for fitting.
+FittedModel<-c("Info","Risk","Noise","Null","Sep")
+#What was used for Simualtion?
+
+SimulationName<-c("Info","Risk","Temperature","Null","Sep")
+nFittedModels=5;#The Model That I Used to Fit 
+nModels=5;# the True Model.
+nValues=5;
+nSubs=50;# how many subs?
+nGroups=2;#how many groups
+
+#preallocate the correlation matrix
+makeRecoveryMatrix<-data.frame(as.vector(rhoSim),as.vector(rhoFit),as.vector(tauSim),as.vector(tauSim),as.vector(ocuSim),as.vector(ocuSim))
+colnames(makeRecoveryMatrix)<-names
+
+FullMatrixRisk<-makeRecoveryMatrix
+FullMatrixRisk[1:length(makeRecoveryMatrix$rhoSim),]<-NA
+
+FullMatrixNoise<-makeRecoveryMatrix
+FullMatrixNoise[1:length(makeRecoveryMatrix$rhoSim),]<-NA
+
+FullMatrixInfo<-makeRecoveryMatrix
+FullMatrixInfo[1:length(makeRecoveryMatrix$rhoSim),]<-NA
+
+makeRecoveryMatrixSep<-data.frame(as.vector(rhoSim),as.vector(rhoFit),as.vector(tauSim),as.vector(tauSim),as.vector(ocuSim),as.vector(ocuSim),as.vector(ocuSim),as.vector(ocuSim))
+colnames(makeRecoveryMatrixSep)<-namesSep
+
+FullMatrixSep<-makeRecoveryMatrixSep
+FullMatrixSep[1:length(makeRecoveryMatrixSep$rhoSim),]<-NA
+
+#Make a structure that you can save the DIC in and the Gsquares in. 
+#DIC.tibble
+DIC.tibble<-tibble(TrueModel=rep(1,nSubs*2*(nValues+1)*nModels*nFittedModels), FittedModel=rep(1,nSubs*2*(nValues+1)*nModels*nFittedModels), DICValue=rep(1,nSubs*2*(nValues+1)*nModels*nFittedModels), GsqValue=rep(1,nSubs*2*(nValues+1)*nModels*nFittedModels))
+
+DICdfCount=1;# this i need to make my sweet dataframe for DIC.
+
+```
+
+
+Now I preallocated Everything. So i can smoothly loop through all the models and make my nice matricies
+```{r, warning=FALSE, echo=FALSE}
+#########################################
+#########################################
+#########################################
+#######################################
+#########################################
+
+#OK. This Matrix will be Huge! You can use it for approximate loo
+
+for (i in 1:nModels){# is the True Model.
+  # empty the "make recovery Matrix."
+  makeRecoveryMatrixSep<-data.frame(as.vector(rhoSim),as.vector(rhoFit),as.vector(tauSim),as.vector(tauFit),as.vector(ocuSafeSim),as.vector(ocuSafeFit),as.vector(ocuRiskSim),as.vector(ocuRiskFit))
+  colnames(makeRecoveryMatrixSep)<-namesSep
+  
+  
+  makeRecoveryMatrix<-data.frame(as.vector(rhoSim),as.vector(rhoFit),as.vector(tauSim),as.vector(tauFit),as.vector(ocuSim),as.vector(ocuFit))
+  colnames(makeRecoveryMatrix)<-names
+  
+  
+  for (k in 1:nFittedModels){# Is the Model that i used to fit.
+    loglik.Loo<- array(NA, dim=c(20000*432,1,100*(nValues+1)))
+    
+    for (j in 0:nValues){
+      tryCatch(
+        {
+          
+          #message("Read_In_Model") I named the Assymetric file differnetly because i fit the model with different boundary conditions.
+          
+          #This extracts the right Parameters from Simulation and fitted procedure.
+          if(FittedModel[k]=="Risk"){# I exctract all the Models where the Risk Model was used to fit the Data
+            fitRisk<-readRDS(paste0("ModelFits_Comparison/LongModelFits",FittedModel[k],k,"_Model",i,"OCU_",j,"_1.rds"))
+            parameters<-rstan::extract(fitRisk)#getparams
+          }else if (FittedModel[k]=="Noise"){# I exctract all the Models where the NOISE Model was used to fit the Data
+            fitNoise<-readRDS(paste0("ModelFits_Comparison/LongModelFits",FittedModel[k],k,"_Model",i,"OCU_",j,"_1.rds"))
+            parameters<-rstan::extract(fitNoise)#getparams
+          }# end noise
+          else if (FittedModel[k]=="Info"){# I exctract all the Models where the INFO Model was used to fit the Data
+            fitInfo<-readRDS(paste0("ModelFits_Comparison/LongModelFits",FittedModel[k],k,"_Model",i,"OCU_",j,"_1.rds"))
+            parameters<-rstan::extract(fitInfo)
+          }else if (FittedModel[k]=="Null"){# I exctract all the Models where the NULL Model was used to fit the Data
+            fitNull<-readRDS(paste0("ModelFits_Comparison/LongModelFits",FittedModel[k],k,"_Model",i,"OCU_",j,"_1.rds"))
+            parameters<-rstan::extract(fitNull)
+          }else if (FittedModel[k]=="Sep"){# I exctract all the Models where the NULL Model was used to fit the Data
+            #IF YOU WANT TO INCLUDE THE OTHER MODEL THAT CONSTRAINS PARAMTER ESTIMATES TO 0 CHANGE HERE.
+            fitSep<-readRDS(paste0("ModelFits_Comparison/0LongModelFits",FittedModel[k],"6_Model",i,"OCU_",j,"_1.rds"))
+            parameters<-rstan::extract(fitSep)#Whoops. That was a Bug
+          }
+          
+          #Models with 3 Paramters:
+          # Look if the Generative Model Matches the Fitted Model
+          if (FittedModel[k]=="Info" && i==1 || FittedModel[k]=="Risk" && i==2 || FittedModel[k]=="Noise" && i==3){#when generative and fitted model re the same.
+            # here you construct a matrix for parameter recovery but only if the fitted model 
+            # is equal the generative one. Otherwise it does not make sense here.
+            #  TsubjG<-array(1,c(numSubjsG,nGroups))
+            load(paste0("../A_Simulations/Model",SimulationName[k],"/1",SimulationName[k],"Social",j,"1.RData"))# load the Right Simulation
+            #here i get the original parameter values back.
+            g1=1;
+            g2=1;
+            #append all entries of the simulation in one matrix that i then can use to make my correlations
+            for (g in 1:length(Simulations)) {
+              if (Simulations[[g]]$group==1){
+                # FOR PARAMETER RECOVERY:
+                rhoSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$alpha[1]
+                tauSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$theta[1]
+                ocuSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$ocu[1]
+                g1=g1+1;
+              }else if (Simulations[[g]]$group==2){
+                # FOR PARAMETER RECOVERY:
+                rhoSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$alpha[1]
+                tauSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$theta[1]
+                ocuSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$ocu[1]
+                g2=g2+1
+              }
+            }
+            #fuck ppl im a crazy ugly programmer. Here i paste it ass into my matrix.
+            for (z in 1:length(parameters$rho[1,,1])){
+              rhoFit[z,1]<-mean(parameters$rho[,z,1])
+              tauFit[z,1]<-mean(parameters$tau[,z,1])
+              ocuFit[z,1]<-mean(parameters$ocu[,z,1])
+              
+              rhoFit[z,2]<-mean(parameters$rho[,z,2])
+              tauFit[z,2]<-mean(parameters$tau[,z,2])
+              ocuFit[z,2]<-mean(parameters$ocu[,z,2])
+            }
+            # Here i put everything into one dataframe. This gf is generated newly each iteration
+            makeRecoveryMatrix<-data.frame(as.vector(rhoSim),as.vector(rhoFit),as.vector(tauSim),as.vector(tauFit),as.vector(ocuSim),as.vector(ocuFit))
+            colnames(makeRecoveryMatrix)<-names
+            switch( FittedModel[k],# concatenate the right matrix please.
+                    "Risk"= FullMatrixRisk<-rbind(FullMatrixRisk,makeRecoveryMatrix),
+                    "Noise"= FullMatrixNoise<-rbind(FullMatrixNoise,makeRecoveryMatrix),
+                    "Info"=FullMatrixInfo<-rbind(FullMatrixInfo,makeRecoveryMatrix)
+            )
+            
+            # Okay and now do the same for the 4 Parameter Model. 
+          } else if (FittedModel[k]=="Sep" && i==5 ){#when generative and fitted model are the same.... We need a slightly different structure for the additional Parameter in the Assymetric Model.
+            # here you construct a matrix for parameter recovery but only if the fitted model 
+            # is equal the generative one. Otherwise it does not make sense here.
+            #  TsubjG<-array(1,c(numSubjsG,nGroups))
+            load(paste0("../A_Simulations/Model",SimulationName[k],"/1",SimulationName[k],"Social",j,"1.RData"))
+            #here i get the original parameter values back.
+            g1=1;
+            g2=1;
+            #append all entries of the simulation in one matrix that i then can use to make my correlations
+            for (g in 1:length(Simulations)) {
+              if (Simulations[[g]]$group==1){
+                # FOR PARAMETER RECOVERY:
+                rhoSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$alpha[1]
+                tauSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$theta[1]
+                ocuSafeSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$ocuSafe[1]
+                ocuRiskSim[g1,Simulations[[g]]$group]<-Simulations[[g]]$ocuRisk[1]
+                g1=g1+1;
+              }else if (Simulations[[g]]$group==2){
+                # FOR PARAMETER RECOVERY:
+                rhoSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$alpha[1]
+                tauSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$theta[1]
+                ocuSafeSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$ocuSafe[1]
+                ocuRiskSim[g2,Simulations[[g]]$group]<-Simulations[[g]]$ocuRisk[1]
+                g2=g2+1
+              }
+            }
+            #fuck ppl im a crazy ugly programmer. Here i paste it ass into my matrix.
+            for (z in 1:length(parameters$rho[1,,1])){
+              rhoFit[z,1]<-mean(parameters$rho[,z,1])
+              tauFit[z,1]<-mean(parameters$tau[,z,1])
+              rhoFit[z,2]<-mean(parameters$rho[,z,2])
+              tauFit[z,2]<-mean(parameters$tau[,z,2])
+              
+              ocuSafeFit[z,1]<-mean(parameters$ocuSafe[,z,1])
+              ocuRiskFit[z,1]<-mean(parameters$ocuRisk[,z,1])
+              ocuSafeFit[z,2]<-mean(parameters$ocuSafe[,z,2])
+              ocuRiskFit[z,2]<-mean(parameters$ocuRisk[,z,2])
+            }
+            makeRecoveryMatrixSep<-data.frame(as.vector(rhoSim),as.vector(rhoFit),as.vector(tauSim),as.vector(tauFit),as.vector(ocuSafeSim),as.vector(ocuSafeFit),as.vector(ocuRiskSim),as.vector(ocuRiskFit))
+            
+            colnames(makeRecoveryMatrixSep)<-namesSep
+            FullMatrixSep<-rbind(FullMatrixSep,makeRecoveryMatrixSep)
+          }
+          
+          message("remove big file again to save space.")
+          rm(fitInfo,fitNoise,fitRisk,fitNull)
+          
+          ##########  in this section i extract the randomly merged chains
+          subject=1# There are 100 Subjects but i need to index it that way. That is Because i use a funny matrix in stan for these simulations. 
+          loglikSub <- array(NA, dim=c(20000*432, 1, 100))# because DIC expects Iteration x Chains x Data, i need to insert a new Dimension
+          for (subjects in 1:nSubs){
+            for (groups in 1:nGroups){
+              ######## This uses the randomly merged chains.
+              #loglikSub<-loglik_Info[,,subjects]#Get the logliklihoods of my from the paramters and not with the extract loglik function
+              loglikSub[,1,subject]<-as.vector(parameters$log_lik[,subjects,,groups])
+              #EffectiveSamples<-relative_eff(exp(loglikSub.Loo))
+              subject=subject+1
+              
+              NonNAindex <- which(is.na(loglik.Loo[1,1,]))# Check the first NA value and use this as index 
+              loglik.Loo[,,NonNAindex[1]]<-as.vector(parameters$log_lik[,subjects,,groups])
+              
+            }#endgroups
+          }#endsubs
+          #THIS IS WHERE I CALCULATE THE DIC!
+          #######################
+          DICAll<-calculateDIC(loglikSub)
+          #######################
+          
+          #Here i store them in my datastructure. 
+          for(Entries in 1:length(DICAll$DIC)){
+            DIC.tibble$TrueModel[DICdfCount]=i;# i is the generative model count
+            DIC.tibble$FittedModel[DICdfCount]=k;# k is the fitted model count
+            
+            DIC.tibble$DICValue[DICdfCount]=DICAll$DIC[Entries];
+            DIC.tibble$GsqValue[DICdfCount]=DICAll$L[Entries];
+            
+            DICdfCount=DICdfCount+1
+          } 
+        },#Do some Error Handling.
+        error=function(cond) {
+          message(paste("File",paste0("ModelFits",FittedModel[k],"_Model",i,"OCU_",j,".RData")," does not exist (yet), will proceed to next index."))
+          message("Here's the original error message:")
+          message(cond)
+        })
+    }# end values
+    # After you Looped through all the things, make a loo. 
+    #assign(loo:loo(loglik.Loo), paste0("Loo_",k,"_",i))
+  }#end fitted
+}#end generative model.
+
+```
+
+# Parameter Recovery
+After running the code we can first see that the simulated parameters substantially correlate with the fitted parameters for the Chung OCU model.
+While the means are not exactly the same; rank orders remain equal. Parameter values used for simulation correlate strongly with parameter estimates that result from the fitting procedure.
+I simulated new data as compared to last time and ran chains that were only half as long as before. This is why the correlations for the risk attitude parameter dont look as good anymore but
+its still decent. This will change again when i use longer chains.
+Very nice is that we get a correlation of 1 for the ocu value, since this is the value we are finally interested in.
+
+```{r pressure, echo=FALSE,fig.height=7,fig.width=7}
+#### make parameter Recovery Plots.
+
+###### Seperate
+FullMatrix<-FullMatrixSep[!is.na(FullMatrixSep),]
+Matrix<-FullMatrix#[,c(1,2,4,5,6)]
+cormat<-round(cor(Matrix,use = "complete.obs"),2)
+upper_tri <- get_lower_tri(cormat)
+melted_cormatA <- melt(upper_tri)
+melted_cormatA<-melt(cormat[c(1,3,5,7),c(2,4,6,8)])# 
+melted_cormatA$Model="Assymetric Model"
+
+
+FullMatrix<-FullMatrixNoise[!is.na(FullMatrixNoise),]
+Matrix<-FullMatrix#[,c(1,2,4,5,6)]
+cormat<-round(cor(Matrix,use = "complete.obs"),2)
+upper_tri <- get_lower_tri(cormat)
+melted_cormatN <- melt(upper_tri)
+melted_cormatN<-melt(cormat[c(1,3,5),c(2,4,6)])
+melted_cormatN$Model="Termbling Hand Model"
+
+
+FullMatrix<-FullMatrixRisk[!is.na(FullMatrixRisk),]
+Matrix<-FullMatrix#[,c(1,2,4,5,6)]
+cormat<-round(cor(Matrix,use = "complete.obs"),2)
+upper_tri <- get_lower_tri(cormat)
+melted_cormatR <- melt(upper_tri)
+melted_cormatR <-melt(cormat[c(1,3,5),c(2,4,6)])
+melted_cormatR$Model="Reward Sensitivity Model"
+
+
+FullMatrix<-FullMatrixInfo[!is.na(FullMatrixInfo),]
+Matrix<-FullMatrix#[,c(1,2,4,5,6)]
+cormat<-round(cor(Matrix,use = "complete.obs"),2)
+upper_tri <- get_lower_tri(cormat)
+melted_cormatI <- melt(upper_tri)
+melted_cormatI<-melt(cormat[c(1,3,5),c(2,4,6)])
+melted_cormatI$Model="Social Information Model"
+
+
+
+##### risk
+
+ggplot(data =melted_cormatR, aes(x=Var1, y=Var2, fill=value)) +  geom_tile(color = "white")+
+  scale_fill_gradientn(limits=c(-1,1),name=expression(paste("Pearson ", rho)),
+                       trans="identity",
+                       colors = c("lightblue","white","red"),
+                       values=scales::rescale(identity(
+                         c(-1, -0.5, #grey parameters
+                           -0.5, 0.5,#
+                           0.5, 1 ))))+ #blue parameters
+  geom_text(aes(Var1, Var2, label = value), color = "black", size = 7) +
+  ggtitle(" Reward Sensitvity")+
+  scale_y_discrete(name="Recovered Parameter",breaks=c("rhoFit","tauFit","ocuFit"),labels=c(expression(rho),expression(tau),expression(omega)))+
+  scale_x_discrete(name="Simulation Parameter",breaks=c("rhoSim","tauSim","ocuSim"),labels=c(expression(rho),expression(tau),expression(omega)))+
+  theme(
+    text = element_text(size=25),
+    axis.text.y=element_text(angle=90,hjust=0.5,size=20),
+    axis.text.x=element_text(vjust = 0.5,size=20),
+    legend.key.size =  unit(0.3, "in"),
+    plot.title = element_text(hjust = 0.5),
+    axis.title.y = element_text(colour = "black"),
+    axis.title.x = element_text(colour = "black")
+  )->D
+print(D)
+ggsave("../X_Figures/Reward_Sensitivity.pdf")
+
+
+ggplot(data = melted_cormatI, aes(x=Var1, y=Var2, fill=value)) +  geom_tile(color = "white")+
+  scale_fill_gradientn(limits=c(-1,1),name=expression(paste("Pearson ", rho)),
+                       trans="identity",
+                       colors = c("lightblue","white","red"),
+                       values=scales::rescale(identity(
+                         c(-1, -0.5, #grey parameters
+                           -0.5, 0.5,#
+                           0.5, 1 ))))+ #blue parameters
+  geom_text(aes(Var1, Var2, label = value), color = "black", size = 7) +
+  ggtitle("Symmetric Social Influence")+
+  scale_y_discrete(name="Recovered Parameter",breaks=c("rhoFit","tauFit","ocuFit"),labels=c(expression(rho),expression(tau),expression(psi)))+
+  scale_x_discrete(name="Simulation Parameter",breaks=c("rhoSim","tauSim","ocuSim"),labels=c(expression(rho),expression(tau),expression(psi)))+
+  theme(
+    text = element_text(size=25),
+    axis.text.y=element_text(angle=90,hjust=0.5,size=20),
+    axis.text.x=element_text(vjust = 0.5,size=20),
+    legend.key.size =  unit(0.3, "in"),
+    plot.title = element_text(hjust = 0.5),
+    axis.title.y = element_text(colour = "black"),
+    axis.title.x = element_text(colour = "white")
+  )->B
+print(B)
+ggsave("../X_Figures/InfoModel.pdf")
+```
+
+```{r pressure, echo=FALSE,fig.height=7,fig.width=7}
+ggplot(data = melted_cormatN, aes(x=Var1, y=Var2, fill=value)) +  geom_tile(color = "white")+
+  scale_fill_gradientn( limits=c(-1,1),name=expression(paste("Pearson ", rho)),
+                        trans="identity",
+                        colors = c("lightblue","white","red"),
+                        values=scales::rescale(identity(
+                          c(-1, -0.5, #grey parameters
+                            -0.5, 0.5,#
+                            0.5, 1 ))))+ #blue parameters
+  geom_text(aes(Var1, Var2, label = value), color = "black", size = 7) +
+  ggtitle("Social Distraction")+
+  scale_y_discrete(name="Recovered Parameter",breaks=c("rhoFit","tauFit","ocuFit"),labels=c(expression(rho),expression(tau),expression(zeta)))+
+  scale_x_discrete(name="Simulation Parameter",breaks=c("rhoSim","tauSim","ocuSim"),labels=c(expression(rho),expression(tau),expression(zeta)))+
+  theme(
+    text = element_text(size=25),
+    axis.text.y=element_text(angle=90,hjust=0.5,size=20),
+    axis.text.x=element_text(vjust = 0.5,size=20),
+    legend.key.size =  unit(0.3, "in"),
+    plot.title = element_text(hjust = 0.5),
+    axis.title.y = element_text(colour = "white"),
+    axis.title.x = element_text(colour = "black")
+  )->E
+print(E)
+ggsave("../X_Figures/TremblingHand.pdf")
+
+
+ggplot(data = melted_cormatA, aes(x=Var1, y=Var2, fill=value)) +  geom_tile(color = "white")+
+  scale_fill_gradientn(limits=c(-1,1),name=expression(paste("Pearson ", rho)),
+                       trans="identity",
+                       colors = c("lightblue","white","red"),
+                       values=scales::rescale(identity(
+                         c(-1, -0.5, #grey parameters
+                           -0.5, 0.5,#
+                           0.5, 1 ))),
+                       guide = guide_legend(
+                         label.position = "left"
+                       )
+  )+ #blue parameters
+  geom_text(aes(Var1, Var2, label = value), color = "black", size = 7) +
+  ggtitle("Asymetric Social Influence ")+
+  scale_y_discrete(name="Recovered Parameter",breaks=c("rhoFit","tauFit","ocuSafeFit","ocuRiskFit"),labels=c(expression(rho),expression(tau),expression(paste(,psi," Safe")),expression(paste(psi," Risk"))))+
+  scale_x_discrete(name="Simulation Parameter",breaks=c("rhoSim","tauSim","ocuSafeSim","ocuRiskSim"),labels=c(expression(rho),expression(tau),expression(paste(psi," Safe")),expression(paste(psi," Risk"))))+
+  theme(
+    text = element_text(size=25),
+    axis.text.y=element_text(angle=90,hjust=0.5,size=20),
+    axis.text.x=element_text(vjust = 0.5,size=20),
+    legend.key.size =  unit(0.3, "in"),
+    plot.title = element_text(hjust = 0.5),
+    axis.title.y = element_text(colour = "white"),
+    axis.title.x = element_text(colour = "white")
+  )->C
+print(C)
+ggsave("../X_Figures/Assymetric.pdf")
+
+
+```
+
+# Confusion Heatmap.
+You can see 5 Models here, which have been fitted 5 times to different Simulated Subjects.
+The x axis depicts the true, generative model. The y axis is the Model that wins according to DIC.
+In each cell you see how often which model was inferred under which generative model. If everything is perfect you see color on the diagonal and nowwhere else.
+I plan to make 100 Simulations per Subject which will take some computing time, now the story does not look convincing yet.
+You probably notice that if the Noise model was the true model, it always got misidentified as the Risk model.
+
+## Does DIC Differ?
+```{r, fig.height = 15, fig.width = 20}
+##### make confusion matrix
+
+Info<-DIC.tibble%>%filter(FittedModel==1)%>%select(TrueModel=TrueModel,DICInfo=DICValue)%>%rowid_to_column("ID")
+Risk<-DIC.tibble%>%filter(FittedModel==2)%>%select(DICRisk=DICValue)%>%rowid_to_column("ID")
+Noise<-DIC.tibble%>%filter(FittedModel==3)%>%select(DICNoise=DICValue)%>%rowid_to_column("ID")
+Null<-DIC.tibble%>%filter(FittedModel==4)%>%select(DICNull=DICValue)%>%rowid_to_column("ID")
+Sep<-DIC.tibble%>%filter(FittedModel==5)%>%select(DICSep=DICValue)%>%rowid_to_column("ID")
+
+
+full<-merge(Info,Risk,by=c("ID"))%>%merge(Noise,by=c("ID"))%>%merge(Null,by=c("ID"))%>%merge(Sep,by=c("ID"))%>%rowwise() %>% 
+  mutate(#Add The calculated Some from before to the
+    Winner = case_when(
+      (min(DICInfo,DICRisk,DICNoise,DICNull,DICSep)==DICInfo) ~ 1,
+      (min(DICInfo,DICRisk,DICNoise,DICNull,DICSep)==DICRisk)~ 2,
+      (min(DICInfo,DICRisk,DICNoise,DICNull,DICSep)==DICNoise)~ 3,
+      (min(DICInfo,DICRisk,DICNoise,DICNull,DICSep)==DICNull)~ 4,
+      (min(DICInfo,DICRisk,DICNoise,DICNull,DICSep)==DICSep)~ 5
+    )
+  )
+length(full[full$TrueModel==1 & full$TrueModel == full$Winner,]$ID)
+# make confusion matrix.
+#check if they are all equal. if so then let the null model win.
+
+
+
+#subset these where the more compelx was equal to one of the other models and evaluate again.
+full[(round(full$DICInfo) == round(full$DICSep)) | (round(full$DICRisk) == round(full$DICSep)) | (round(full$DICNoise) == round(full$DICSep)),]
+
+argh<-full[(round(full$DICNull) == round(full$DICSep))|(round(full$DICInfo) == round(full$DICSep)) | (round(full$DICRisk) == round(full$DICSep)) | (round(full$DICNoise) == round(full$DICSep)),]%>%mutate(#Add The calculated Some from before to the
+  Winner = case_when(
+    (min(DICInfo,DICRisk,DICNoise,DICNull)==DICInfo) ~ 1,
+    (min(DICInfo,DICRisk,DICNoise,DICNull)==DICRisk)~ 2,
+    (min(DICInfo,DICRisk,DICNoise,DICNull)==DICNoise)~ 3,
+    (min(DICInfo,DICRisk,DICNoise,DICNull)==DICNull)~ 4,
+    TRUE ~ Winner#keep the rest as it is
+  )
+)
+#replace the old values with the new ones.
+
+
+ahm<-full[full$Winner == 5,]%>%mutate(#Add The calculated Some from before to the
+  Winner = case_when(
+    (round(DICSep)==round(DICInfo)) ~ 1,
+    (round(DICSep)==round(DICRisk))~ 2,
+    (round(DICSep)==round(DICNoise))~ 3,
+    (round(DICSep)==round(DICNull))~ 4,
+    TRUE ~ Winner#keep the rest as it is
+  )
+)
+
+
+
+full[full$ID %in% ahm$ID,]<-ahm
+
+for(i in 1:length(full$ID)){
+  if(min(round(full$DICInfo[i]),round(full$DICRisk[i]),round(full$DICNoise[i]),round(full$DICSep[i])) == round(full$DICNull[i])){
+    full$Winner[i]=4
+  }
+}
+
+
+confusion<-tibble(
+  Count=rep(0,5),
+  Truth=c("1","2","3","4","5"),
+  Predicted=c("1","2", "3", "4","5"),
+  Percent=rep(0,5)
+)%>%expand(Truth,Predicted,Count,Percent)
+
+Generative=c("1","2","3","4","5")
+
+for(i in 1:length(Generative)){
+  
+  #confusion[,i][1:length(t(TruePreds))]<-t(TruePreds)
+  # oy vey.
+  confusion <- confusion %>% mutate(#Add The calculated Some from before to the
+    Count = case_when((Predicted == "1" & Truth==Generative[i])~ as.double(length(full[full$TrueModel==i & full$Winner==1,]$ID)),
+                      (Predicted == "2" & Truth==Generative[i])~ as.double(length(full[full$TrueModel==i & full$Winner==2,]$ID)),
+                      (Predicted == "3" & Truth==Generative[i])~ as.double(length(full[full$TrueModel==i & full$Winner==3,]$ID)),
+                      (Predicted == "4" & Truth==Generative[i])~ as.double(length(full[full$TrueModel==i & full$Winner==4,]$ID)),
+                      (Predicted == "5" & Truth==Generative[i])~ as.double(length(full[full$TrueModel==i & full$Winner==5,]$ID)),
+                      TRUE ~ Count#keep the rest as it is
+    )#end cases
+  ) #no mutation
+}#end loop.
+
+#make it a percent Value 
+confusion$Percent=round(confusion$Count/6)
+
+#k this whole crap just happens so that the Confusion Matrix has the same order as the Parameter Recovery and Everything else.
+confusion%>%mutate(
+  Predicted= case_when((Predicted == "1" ~"Social Information"),
+                       (Predicted == "2" ~"Reward Sensitivty"),
+                       (Predicted == "3" ~"Trembling Hand"),
+                       (Predicted == "4" ~"Null"),
+                       (Predicted == "5" ~"Assymetric"),
+                       TRUE ~ Predicted#keep the rest as it is
+  ),#end cases
+  Truth= case_when((Truth == "1" ~"Social Information"),
+                   (Truth == "2" ~"Reward Sensitivty"),
+                   (Truth == "3" ~"Trembling Hand"),
+                   (Truth == "4" ~"Null"),
+                   (Truth == "5" ~"Assymetric"),
+                   TRUE ~ Truth#keep the rest as it is
+  )
+)%>%mutate(
+  Predicted= case_when((Predicted == "Social Information"~"1"),
+                       (Predicted == "Reward Sensitivty"~"3"),
+                       (Predicted == "Trembling Hand"~"4"),
+                       (Predicted == "Null"~"5"),
+                       (Predicted == "Assymetric"~"2"),
+                       TRUE ~ Predicted#keep the rest as it is
+  ),#end cases
+  Truth= case_when((Truth == "Social Information"~"1"),
+                   (Truth == "Reward Sensitivty"~"3"),
+                   (Truth == "Trembling Hand"~"4"),
+                   (Truth == "Null"~"5"),
+                   (Truth == "Assymetric"~"2"),
+                   TRUE ~ Truth#keep the rest as it is
+  )
+)%>%ggplot( aes(Truth, Predicted)) + geom_tile(aes(fill = Percent), colour = "white") + 
+  scale_fill_gradient(low = "white", high = "green",name="Proportion \n  Winning \n      [%] ",
+                      guide = guide_legend(
+                        label.position = "left"
+                      ))+
+  geom_text(aes(label=Percent),size=10)+
+  scale_y_discrete(name="Fitted Model \n",breaks=c(1,2,3,4,5), labels=c("Symmetric \n Influence","Asymmetric \n Influence","Reward \n Sensitivty","Social \n Distraction","Null"))+
+  scale_x_discrete(name="\n Generative Model",breaks=c(1,2,3,4,5), labels=c("Symmetric \n Influence","Asymmetric \n Influence","Reward \n Sensitivty","Social \n Distraction","Null"))+
+  ggtitle("Confusion Matrix Social Models")+
+  theme(
+    text = element_text(size=25),
+    axis.text.y=element_text(angle=45,hjust=0.5, size=25),
+    axis.text.x=element_text(angle=45,vjust = 0.5,size=25),
+    legend.key.size =  unit(0.5, "in"),
+    plot.title = element_text(hjust = 0.5,size=30)
+  )->A
+print(A)
+ggsave("../X_Figures/ModelComp.pdf",width = 10, height = 15)
+```
+#Make a nice Figure 
+
+Down here i make a nice figure into one panel
+```{r fig.width=30,fig.height=15}
+legend<-get_legend(C)
+
+bottom_row <- cowplot::plot_grid(B+theme(legend.position="none"),
+                                 C+theme(legend.position="none"),
+                                 D+theme(legend.position="none"),
+                                 E+theme(legend.position="none"),
+                                 labels = c('(B)', '(C)','(D)','(E)'),ncol = 2, align = 'h')
+cowplot::plot_grid(A, NULL, bottom_row,NULL,legend, labels = c('(A)', ''), ncol = 5, rel_heights = c(1,1,1,1,1),rel_widths = c(1.2,0.1,1,0.1,0.2))
+ggsave("../X_Figures/ModelParamRecov.tiff",width = 30, height = 15,dpi=300)
+```
+
