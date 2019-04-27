@@ -21,6 +21,7 @@ library(knitr)
 library(stringr)
 library(sigmoid)
 library(reshape2)
+library(cowplot)
 
 
 source("../C_Fit_BraamsData/Helpers/Start_Workflow.R")# in here there is the DIC script defined.
@@ -120,7 +121,8 @@ DICdfCount=1;# this i need to make my sweet dataframe for DIC.
 ```
 
 
-Now I preallocated Everything. So i can smoothly loop through all the models and make my nice matricies
+Now I preallocated Everything. So i can smoothly loop through all the models and make my nice matricies but it takes a while.
+
 ```{r, warning=FALSE, echo=FALSE}
 #########################################
 #########################################
@@ -308,6 +310,7 @@ for (i in 1:nModels){# is the True Model.
 ```
 
 # Parameter Recovery
+
 After running the code we can first see that the simulated parameters substantially correlate with the fitted parameters for the Chung OCU model.
 While the means are not exactly the same; rank orders remain equal. Parameter values used for simulation correlate strongly with parameter estimates that result from the fitting procedure.
 I simulated new data as compared to last time and ran chains that were only half as long as before. This is why the correlations for the risk attitude parameter dont look as good anymore but
@@ -407,7 +410,7 @@ print(B)
 ggsave("../X_Figures/InfoModel.pdf")
 ```
 
-```{r pressure, echo=FALSE,fig.height=7,fig.width=7}
+```{r Corrmat, echo=FALSE,fig.height=7,fig.width=7}
 ggplot(data = melted_cormatN, aes(x=Var1, y=Var2, fill=value)) +  geom_tile(color = "white")+
   scale_fill_gradientn( limits=c(-1,1),name=expression(paste("Pearson ", rho)),
                         trans="identity",
@@ -611,6 +614,7 @@ confusion%>%mutate(
 print(A)
 ggsave("../X_Figures/ModelComp.pdf",width = 10, height = 15)
 ```
+
 #Make a nice Figure 
 
 Down here i make a nice figure into one panel
