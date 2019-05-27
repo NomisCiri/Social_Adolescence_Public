@@ -8,7 +8,7 @@ In each File there are READMEs that will be shown automatically.
 These will show you the resluts and some code of the latest analysis.
 
 This Repository does not contain the stan Data files that are created in the process because they are just too big.
-If you want to lug and play you ned R/3.5.1 and stan installed. A PBS Cluster would be good too.
+If you want to plug and play you ned R/3.5.1 and stan installed. A PBS Cluster would be good too.
 
 Now Each Folder should be a self contained Project Folder that has everything you need to Simulate Data, make the Model Comaprison, fit the Models for Braams and Blankenstein and examine the 
 Model Fits.
