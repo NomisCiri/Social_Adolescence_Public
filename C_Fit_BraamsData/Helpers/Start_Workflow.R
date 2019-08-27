@@ -34,7 +34,7 @@ getBIC_AIC<-function(a){
 calculateDIC = function(postLL) {
   #Calculate L
   #theta_hat = apply(theta_post, 2, mean)
-  L = apply(postLL,3,mean)
+  L = apply(postLL,3,mean,na.rm=TRUE)
   #Calculate P
   S = nrow(postLL) #S = number of iterations
   Sub<-length(postLL[1,1,])# number of datagenerating instances
@@ -42,9 +42,15 @@ calculateDIC = function(postLL) {
   llSum = 0
   for (i in 1:Sub){
     for (s in 1:S) {
-      llSum = llSum + postLL[s,1,i]
+      if(is.na(postLL[s,1,i])){
+        warning("Missing values in logliklihood.")
+      }else{
+        llSum = llSum + postLL[s,1,i]
+      }
+      
     }
   }
+  
   P = 2 * (L - (1 / S * llSum))
   
   #Calculate DIC
@@ -53,7 +59,6 @@ calculateDIC = function(postLL) {
   #Return the results
   list(DIC=DIC, P=P, L=L)
 }
-#PLOTTING
 # this is a nice theme for ggplot plots
 #SC 2017
 library(ggplot2)
