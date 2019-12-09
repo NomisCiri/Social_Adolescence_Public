@@ -1,6 +1,7 @@
 # Hi
+NOTE: DUE TO DATA PROTECTION REASON WE CAN NOT PUBLICLY PROVIDE RAW DATA FOR THE EXPERMENTS.
 
-This is a new Repository that leads you through the OCU Data.
+This is a new Repository that leads you through the Social Adolescent project.
 This is supposed to enable anyone to reproduce all the steps and analyis of the project.
 The steps so far are labelled from A through D.
 
